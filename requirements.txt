@@ -1,0 +1,16 @@
+annotated-types
+anyio
+click
+fastapi
+h11
+idna
+pip
+psycopg2-binary
+pydantic
+pydantic_core
+python-dotenv
+sniffio
+SQLAlchemy
+starlette
+typing_extensions
+uvicorn
