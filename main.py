@@ -67,7 +67,7 @@ async def read_task(task_id: int, db: db_dependency):
 
 @app.post("/tasks")
 async def create_task(task: TaskBase, db: db_dependency):
-    date_obj = datetime.strptime(task.date, "%d/%m/%Y")
+    date_obj = datetime.strptime(task.date, "%Y-%m-%d")
 
     result = models.Task(title=task.title, description=task.description, date=date_obj,
                          is_completed=task.is_completed, is_important=task.is_important)
@@ -86,7 +86,7 @@ async def update_task(task_id: int, task: TaskBase, db: db_dependency):
     if not result:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    date_obj = datetime.strptime(task.date, "%d/%m/%Y")
+    date_obj = datetime.strptime(task.date, "%Y-%m-%d %H:%M:%S")
 
     result.title = task.title
     result.description = task.description
