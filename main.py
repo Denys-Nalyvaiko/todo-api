@@ -1,12 +1,28 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Annotated
-from sqlalchemy import asc
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal
 import models
 
 app = FastAPI()
+
+# TODO remove temporary * from origins
+origins = [
+    "http://localhost:3000",
+    "https://todo-app-rho-sand.vercel.app/",
+    "*"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -32,7 +48,7 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 @app.get("/tasks")
 async def read_tasks(db: db_dependency):
-    result = db.query(models.Task).order_by(asc(models.Task.id)).all()
+    result = db.query(models.Task).order_by(desc(models.Task.id)).all()
     return result
 
 
