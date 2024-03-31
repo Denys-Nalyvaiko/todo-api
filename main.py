@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from database import engine, SessionLocal
 import models
+import auth
 
 app = FastAPI()
+app.include_router(auth.router)
 
 # TODO remove temporary * from origins
 origins = [
@@ -45,6 +47,15 @@ def get_db():
 
 
 db_dependency = Annotated[Session, Depends(get_db)]
+user_dependency = Annotated[dict, Depends(auth.get_current_user)]
+
+
+@app.get("/users/current")
+async def get_current_user(user: user_dependency, db: db_dependency):
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+    return user
 
 
 @app.get("/tasks")
