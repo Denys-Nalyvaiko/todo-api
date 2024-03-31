@@ -55,18 +55,20 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(register_user_request: RegisterUserRequest, db: db_dependency):
-    register_user_model = User(
+    user = User(
         username=register_user_request.username,
         email=register_user_request.email,
         hashed_password=bcrypt_context.hash(register_user_request.password)
     )
 
-    db.add(register_user_model)
+    db.add(user)
     db.commit()
-    db.refresh(register_user_model)
+    db.refresh(user)
+
+    return {"username": user.username, "email": user.email}
 
 
-@router.post("/login", status_code=status.HTTP_200_OK, response_model=Token)
+@router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(login_user_request: LoginUserRequest, db: db_dependency):
     email = login_user_request.email
     password = login_user_request.password
@@ -82,7 +84,8 @@ async def login_user(login_user_request: LoginUserRequest, db: db_dependency):
 
     token = create_access_token(user.email, user.id, timedelta(minutes=30))
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {"user": {"username": user.username, "email": user.email},
+            "access_token": token, "token_type": "bearer"}
 
 
 def authenticate_user(email: str, password: str, db):
@@ -105,17 +108,19 @@ def create_access_token(email: str, user_id: int, expires_delta: timedelta = Non
     return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
+async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)], db: db_dependency):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        user_id: int = payload.get("id")
 
-        if email is None or user_id is None:
+        if email is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                                 detail="Could not validate credentials")
 
-        return {'email': email, 'id': user_id}
+        user = db.query(User).filter(User.email == email).first()
+
+        return {"user": {"id": user.id, "username": user.username, "email": user.email},
+                "access_token": token, "token_type": "bearer"}
 
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,

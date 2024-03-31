@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from database import Base
 
 
@@ -10,6 +11,8 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
 
+    tasks = relationship("Task", back_populates="user")
+
 
 class Task(Base):
     __tablename__ = 'tasks'
@@ -20,3 +23,7 @@ class Task(Base):
     date = Column(DateTime)
     is_completed = Column(Boolean, default=False)
     is_important = Column(Boolean, default=False)
+    user_id = Column(Integer, ForeignKey('users.id'))
+
+    user = relationship("User", back_populates="tasks")
+
