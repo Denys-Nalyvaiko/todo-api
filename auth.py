@@ -1,4 +1,6 @@
 import os
+import hashlib
+from uuid import uuid4
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -10,7 +12,7 @@ from starlette import status
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from database import SessionLocal
-from models import User
+from models import User, RevokedToken
 
 load_dotenv()
 
@@ -88,6 +90,28 @@ async def login_user(login_user_request: LoginUserRequest, db: db_dependency):
             "access_token": token, "token_type": "bearer"}
 
 
+@router.get("/logout", status_code=status.HTTP_200_OK)
+async def logout_user(db: db_dependency, token: str = Depends(oauth2_bearer)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
+        token_id = payload.get("jti")
+
+        if token_id is None:
+            raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+        if db.query(RevokedToken).filter(RevokedToken.token_id == token_id).first():
+            raise HTTPException(status_code=401, detail="Unauthorized access")
+
+        revoked_token = RevokedToken(token_id=token_id)
+        db.add(revoked_token)
+        db.commit()
+
+        return {"message": "Logout successful"}
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+
 def authenticate_user(email: str, password: str, db):
     user = db.query(User).filter(User.email == email).first()
 
@@ -101,7 +125,11 @@ def authenticate_user(email: str, password: str, db):
 
 
 def create_access_token(email: str, user_id: int, expires_delta: timedelta = None):
-    encode = {'sub': email, 'id': user_id}
+    uuid_str = str(uuid4())
+    unique_string = f"{user_id}-{email}-{uuid_str}"
+    token_id = hashlib.md5(unique_string.encode()).hexdigest()
+
+    encode = {'sub': email, 'id': user_id, 'jti': token_id}
     expires = datetime.now(timezone.utc) + expires_delta
     encode.update({'exp': expires})
 
@@ -112,12 +140,23 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)], db: db
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
+        token_id = payload.get('jti')
 
-        if email is None:
+        if email is None or token_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                                 detail="Could not validate credentials")
 
         user = db.query(User).filter(User.email == email).first()
+
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Unauthorized access")
+
+        token_revoked = db.query(RevokedToken).filter(RevokedToken.token_id == token_id).first()
+
+        if token_revoked:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Unauthorized access")
 
         return {"user": {"id": user.id, "username": user.username, "email": user.email},
                 "access_token": token, "token_type": "bearer"}
