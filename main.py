@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from database import engine, SessionLocal
 import models
+import auth
 
 app = FastAPI()
+app.include_router(auth.router)
 
 # TODO remove temporary * from origins
 origins = [
@@ -45,69 +47,87 @@ def get_db():
 
 
 db_dependency = Annotated[Session, Depends(get_db)]
+user_dependency = Annotated[dict, Depends(auth.get_current_user)]
+
+
+@app.get("/users/current")
+async def get_current_user(user: user_dependency, db: db_dependency):
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+    return user
 
 
 @app.get("/tasks")
-async def read_tasks(db: db_dependency, sort_by: str = "original"):
+async def read_tasks(db: db_dependency, user: user_dependency, sort_by: str = "original"):
     order_option = get_order_option(sort_by)
-    result = db.query(models.Task).order_by(order_option).all()
+    tasks = (db.query(models.Task)
+             .filter(models.Task.user_id == user['user']['id'])
+             .order_by(order_option).all())
 
-    return result
+    return tasks
 
 
 @app.get("/tasks/{task_id}")
-async def read_task(task_id: int, db: db_dependency):
-    result = db.query(models.Task).get(task_id)
+async def read_task(task_id: int, db: db_dependency, user: user_dependency):
+    task = (db.query(models.Task)
+            .filter(models.Task.id == task_id, models.Task.user_id == user['user']['id'])
+            .first())
 
-    if not result:
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return result
+    return task
 
 
 @app.post("/tasks")
-async def create_task(task: TaskBase, db: db_dependency):
+async def create_task(task: TaskBase, db: db_dependency, user: user_dependency):
     date_obj = datetime.strptime(task.date, "%Y-%m-%d").date()
 
-    result = models.Task(title=task.title, description=task.description, date=date_obj,
-                         is_completed=task.is_completed, is_important=task.is_important)
+    new_task = models.Task(title=task.title, description=task.description, date=date_obj,
+                           is_completed=task.is_completed, is_important=task.is_important,
+                           user_id=user['user']['id'])
 
-    db.add(result)
+    db.add(new_task)
     db.commit()
-    db.refresh(result)
+    db.refresh(new_task)
 
-    return result
+    return new_task
 
 
 @app.put("/tasks/{task_id}")
-async def update_task(task_id: int, task: TaskBase, db: db_dependency):
-    result = db.query(models.Task).get(task_id)
+async def update_task(task_id: int, task: TaskBase, db: db_dependency, user: user_dependency):
+    target_task = (db.query(models.Task)
+                   .filter(models.Task.id == task_id, models.Task.user_id == user['user']['id'])
+                   .first())
 
-    if not result:
+    if not target_task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     date_obj = datetime.strptime(task.date, "%Y-%m-%d").date()
 
-    result.title = task.title
-    result.description = task.description
-    result.date = date_obj
-    result.is_completed = task.is_completed
-    result.is_important = task.is_important
+    target_task.title = task.title
+    target_task.description = task.description
+    target_task.date = date_obj
+    target_task.is_completed = task.is_completed
+    target_task.is_important = task.is_important
 
     db.commit()
-    db.refresh(result)
+    db.refresh(target_task)
 
-    return result
+    return target_task
 
 
 @app.delete("/tasks/{task_id}")
-async def delete_task(task_id: int, db: db_dependency):
-    result = db.query(models.Task).get(task_id)
+async def delete_task(task_id: int, db: db_dependency, user: user_dependency):
+    task = (db.query(models.Task)
+            .filter(models.Task.id == task_id, models.Task.user_id == user['user']['id'])
+            .first())
 
-    if not result:
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    db.delete(result)
+    db.delete(task)
     db.commit()
 
     return {"message": "Task deleted successfully"}
