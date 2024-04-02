@@ -63,6 +63,11 @@ async def register_user(register_user_request: RegisterUserRequest, db: db_depen
         hashed_password=bcrypt_context.hash(register_user_request.password)
     )
 
+    user_exists = db.query(User).filter(User.email == user.email).first()
+
+    if user_exists:
+        raise HTTPException(status_code=409, detail="Conflict")
+
     db.add(user)
     db.commit()
     db.refresh(user)
